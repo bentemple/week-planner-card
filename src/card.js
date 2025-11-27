@@ -520,7 +520,7 @@ export class WeekPlannerCard extends LitElement {
                             ${this._showTitle ?
                                     html`
                                         <div class="title">
-                                            ${event.summary}
+                                            ${unsafeHTML(event.summary)}
                                         </div>
                                     ` :
                                     ''
@@ -624,7 +624,7 @@ export class WeekPlannerCard extends LitElement {
     _renderEventDetailsDialogHeading() {
         return html`
             <div class="header_title">
-                <span>${this._currentEventDetails.summary}</span>
+                <span>${unsafeHTML(this._currentEventDetails.summary)}</span>
                 <ha-icon-button
                     .label="${this.hass?.localize('ui.dialogs.generic.close') ?? 'Close'}"
                     dialogAction="close"
