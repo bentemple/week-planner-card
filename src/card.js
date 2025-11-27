@@ -761,18 +761,17 @@ export class WeekPlannerCard extends LitElement {
             const entityDomain = calendar.entity.split('.')[0];
 
             if (entityDomain === 'todo') {
-                // Fetch todo items using REST API service call
-                this.hass.callApi(
-                    'post',
-                    'services/todo/get_items?return_response=true',
-                    { entity_id: calendar.entity, status: ['needs_action'] }
-                ).then(response => {
+                // Fetch todo items using WebSocket API (same as official HA frontend)
+                this.hass.callWS({
+                    type: 'todo/item/list',
+                    entity_id: calendar.entity
+                }).then(response => {
                     if (this._startDate.toISO() !== runStartdate) {
                         this._loading--;
                         return;
                     }
 
-                    const items = response[calendar.entity]?.items ?? [];
+                    const items = response.items ?? [];
                     items.forEach(item => {
                         // Only show items with due dates
                         if (!item.due) {
@@ -798,8 +797,12 @@ export class WeekPlannerCard extends LitElement {
 
                         // Create event-like object from todo item
                         // For compatibility with _convertApiDate, wrap the due date
+                        // Add strikethrough for completed items
+                        const isCompleted = item.status === 'completed';
+                        const summary = isCompleted ? `<s>${item.summary}</s>` : item.summary;
+
                         const event = {
-                            summary: item.summary,
+                            summary: summary,
                             description: item.description ?? null,
                             start: { date: item.due.split('T')[0] },  // Remove time component if present
                             end: { date: item.due.split('T')[0] }
