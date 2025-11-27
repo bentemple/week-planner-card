@@ -756,43 +756,113 @@ export class WeekPlannerCard extends LitElement {
             }
             let calendarSorting = calendarNumber;
             this._loading++;
-            this.hass.callApi(
-                'get',
-                'calendars/' + calendar.entity + '?start=' + encodeURIComponent(startDate.toISO()) + '&end=' + encodeURIComponent(endDate.toISO())
-            ).then(response => {
-                if (this._startDate.toISO() !== runStartdate) {
+
+            // Determine entity type (calendar or todo)
+            const entityDomain = calendar.entity.split('.')[0];
+
+            if (entityDomain === 'todo') {
+                // Fetch todo items using REST API service call
+                this.hass.callApi(
+                    'post',
+                    'services/todo/get_items?return_response=true',
+                    { entity_id: calendar.entity, status: ['needs_action'] }
+                ).then(response => {
+                    if (this._startDate.toISO() !== runStartdate) {
+                        this._loading--;
+                        return;
+                    }
+
+                    const items = response[calendar.entity]?.items ?? [];
+                    items.forEach(item => {
+                        // Only show items with due dates
+                        if (!item.due) {
+                            return;
+                        }
+
+                        // Parse the due date (item.due is an ISO string)
+                        const dueDate = DateTime.fromISO(item.due);
+
+                        if (!dueDate.isValid) {
+                            console.warn('Invalid due date for todo item:', item);
+                            return;
+                        }
+
+                        // Check if due date is within the visible range
+                        if (dueDate < startDate || dueDate > endDate) {
+                            return;
+                        }
+
+                        if (this._hidePastEvents && dueDate < now) {
+                            return;
+                        }
+
+                        // Create event-like object from todo item
+                        // For compatibility with _convertApiDate, wrap the due date
+                        const event = {
+                            summary: item.summary,
+                            description: item.description ?? null,
+                            start: { date: item.due.split('T')[0] },  // Remove time component if present
+                            end: { date: item.due.split('T')[0] }
+                        };
+
+                        if (this._isFilterEvent(event, calendar.filter ?? '')) {
+                            return;
+                        }
+
+                        // Todo items are treated as all-day events on their due date
+                        const fullDay = true;
+                        this._addEvent(event, dueDate, dueDate, fullDay, calendar, calendarSorting);
+                    });
+
                     this._loading--;
-                    return;
-                }
-
-                response.forEach(event => {
-                    if (this._isFilterEvent(event, calendar.filter ?? '')) {
-                        return;
+                }).catch(error => {
+                    if (!error.error) {
+                        console.log(error);
                     }
-
-                    let startDate = this._convertApiDate(event.start);
-                    let endDate = this._convertApiDate(event.end);
-                    if (this._hidePastEvents && endDate < now) {
-                        return;
-                    }
-                    let fullDay = this._isFullDay(startDate, endDate);
-
-                    if (!fullDay && !this._isSameDay(startDate, endDate)) {
-                        this._handleMultiDayEvent(event, startDate, endDate, calendar, calendarSorting);
-                    } else {
-                        this._addEvent(event, startDate, endDate, fullDay, calendar, calendarSorting);
-                    }
+                    this._error = 'Error while fetching todo list: ' + error.error;
+                    this._loading = 0;
+                    throw new Error(this._error);
                 });
+            } else {
+                // Fetch calendar events using REST API (existing logic)
+                this.hass.callApi(
+                    'get',
+                    'calendars/' + calendar.entity + '?start=' + encodeURIComponent(startDate.toISO()) + '&end=' + encodeURIComponent(endDate.toISO())
+                ).then(response => {
+                    if (this._startDate.toISO() !== runStartdate) {
+                        this._loading--;
+                        return;
+                    }
 
-                this._loading--;
-            }).catch(error => {
-                if (!error.error) {
-                    console.log(error);
-                }
-                this._error = 'Error while fetching calendar: ' + error.error;
-                this._loading = 0;
-                throw new Error(this._error);
-            });
+                    response.forEach(event => {
+                        if (this._isFilterEvent(event, calendar.filter ?? '')) {
+                            return;
+                        }
+
+                        let startDate = this._convertApiDate(event.start);
+                        let endDate = this._convertApiDate(event.end);
+                        if (this._hidePastEvents && endDate < now) {
+                            return;
+                        }
+                        let fullDay = this._isFullDay(startDate, endDate);
+
+                        if (!fullDay && !this._isSameDay(startDate, endDate)) {
+                            this._handleMultiDayEvent(event, startDate, endDate, calendar, calendarSorting);
+                        } else {
+                            this._addEvent(event, startDate, endDate, fullDay, calendar, calendarSorting);
+                        }
+                    });
+
+                    this._loading--;
+                }).catch(error => {
+                    if (!error.error) {
+                        console.log(error);
+                    }
+                    this._error = 'Error while fetching calendar: ' + error.error;
+                    this._loading = 0;
+                    throw new Error(this._error);
+                });
+            }
             calendarNumber++;
         });
 
