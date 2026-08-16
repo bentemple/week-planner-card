@@ -39,7 +39,7 @@ Custom Home Assistant card displaying a responsive overview of multiple days wit
     Add:
     ```yaml
     resources:
-      - url: /local/week-planner-card.js?version=1.14.1
+      - url: /local/week-planner-card.js?version=1.15.0
     type: module
     ```
   - **Using the graphical editor**
@@ -102,18 +102,29 @@ When `days` is set to `month` and `startingDay` is configured as a specific week
 
 ### Calendars
 
-| Name               | Type    | Default      | Supported options                             | Description                                            | Version |
-|--------------------|---------|--------------|-----------------------------------------------|--------------------------------------------------------|---------|
-| `entity`           | string  | **Required** | `calendar.my_calendar`                        | Entity ID                                              | 1.0.0   |
-| `name`             | string  | optional     | Any text                                      | Name of the calendar                                   | 1.7.0   |
-| `color`            | string  | optional     | Any CSS color                                 | Color used for events from the calendar                | 1.0.0   |
-| `icon`             | string  | optional     | Any icon                                      | Icon used for events from the calendar                 | 1.10.0  |
+The card supports both calendar entities (`calendar.*`) and todo list entities (`todo.*`). Todo list items with due dates will be displayed alongside calendar events.
+
+| Name               | Type    | Default      | Supported options                             | Description                                                             | Version |
+|--------------------|---------|--------------|-----------------------------------------------|-------------------------------------------------------------------------|---------|
+| `entity`           | string  | **Required** | `calendar.my_calendar` \| `todo.my_list`      | Entity ID (calendar since 1.0.0, todo list support added in 1.15.0)     | 1.0.0   |
+| `name`             | string  | optional     | Any text                                      | Name of the calendar or todo list                      | 1.7.0   |
+| `color`            | string  | optional     | Any CSS color                                 | Color used for events from the calendar or todo list   | 1.0.0   |
+| `icon`             | string  | optional     | Any icon                                      | Icon used for events from the calendar or todo list    | 1.10.0  |
 | `eventTitleField`  | string  | optional     | Any text                                      | Name of the title field for events (usually `summary`) | 1.11.0  |
 | `filter`           | string  | optional     | Any regular expression                        | Remove events that match the regular expression        | 1.8.0   |
 | `filterText`       | string  | optional     | Any regular expression                        | Remove text from events                                | 1.10.0  |
 | `replaceTitleText` | object  | optional     | See [Replace title text](#replace-title-text) | Replace title text                                     | 1.12.0  |
 | `hideInLegend`     | boolean | false        | `false` \| `true`                             | Do not show the calendar in the legend                 | 1.8.0   |
 | `initiallyHidden`  | boolean | false        | `false` \| `true`                             | Initially hide the calendar                            | 1.13.0  |
+
+#### Todo List Support (Version 1.15.0)
+
+When using todo list entities:
+- Only items with due dates are displayed
+- Items show a checkbox that can be clicked to mark them as complete or incomplete
+- Completed items are shown with a strikethrough
+- Due dates with times are shown at the specific time, otherwise they appear as all-day items
+- Todo items do not open a details dialog when clicked (only the checkbox is interactive)
 
 ### Texts
 
@@ -370,4 +381,17 @@ texts:
   yesterday:
   today:
   tomorrow:
+```
+
+### With todo lists
+
+```yaml
+type: custom:week-planner-card
+calendars:
+  - entity: calendar.my_calendar
+    color: '#e6c229'
+  - entity: todo.shopping_list
+    color: '#1a8fe3'
+  - entity: todo.tasks
+    color: '#ff6b6b'
 ```

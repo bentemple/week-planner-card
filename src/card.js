@@ -567,8 +567,19 @@ export class WeekPlannerCard extends LitElement {
                             </div>
                             ${this._showTitle ?
                                     html`
-                                        <div class="title">
-                                            ${event.summary}
+                                        <div class="title" style="display: flex; align-items: center; gap: 8px;">
+                                            ${event.isTodoItem ? html`
+                                                <input
+                                                    type="checkbox"
+                                                    .checked="${event.todoStatus === 'completed'}"
+                                                    @click="${(e) => {
+                                                        e.stopPropagation();
+                                                        this._handleTodoCheckboxClick(event, e.target.checked);
+                                                    }}"
+                                                    style="cursor: pointer; margin: 0;"
+                                                />
+                                            ` : ''}
+                                            <span style="flex: 1;">${unsafeHTML(event.summary)}</span>
                                         </div>
                                     ` :
                                     ''
@@ -688,7 +699,7 @@ export class WeekPlannerCard extends LitElement {
     _renderEventDetailsDialogHeading() {
         return html`
             <div class="header_title">
-                <span>${this._currentEventDetails.summary}</span>
+                <span>${unsafeHTML(this._currentEventDetails.summary)}</span>
                 <ha-icon-button
                     .label="${this.hass?.localize('ui.dialogs.generic.close') ?? 'Close'}"
                     dialogAction="close"
@@ -835,41 +846,118 @@ export class WeekPlannerCard extends LitElement {
             }
             let currentCalendarNumber = calendarNumber;
             this._loading++;
-            this.hass.callApi(
-                'get',
-                'calendars/' + calendar.entity + '?start=' + encodeURIComponent(startDate.toISO()) + '&end=' + encodeURIComponent(endDate.toISO())
-            ).then(response => {
-                if (this._startDate.toISO() !== runStartdate) {
+
+            // Determine entity type (calendar or todo)
+            const entityDomain = calendar.entity.split('.')[0];
+
+            if (entityDomain === 'todo') {
+                // Fetch todo items using WebSocket API (same as official HA frontend)
+                this.hass.callWS({
+                    type: 'todo/item/list',
+                    entity_id: calendar.entity
+                }).then(response => {
+                    if (this._startDate.toISO() !== runStartdate) {
+                        this._loading--;
+                        return;
+                    }
+
+                    this._calendarErrors[currentCalendarNumber] = '';
+
+                    const items = response.items ?? [];
+                    items.forEach(item => {
+                        // Only show items with due dates
+                        if (!item.due) {
+                            return;
+                        }
+
+                        // Parse the due date (item.due is an ISO string)
+                        const dueDate = DateTime.fromISO(item.due);
+
+                        if (!dueDate.isValid) {
+                            console.warn('Invalid due date for todo item:', item);
+                            return;
+                        }
+
+                        // Check if due date is within the visible range
+                        if (dueDate < startDate || dueDate > endDate) {
+                            return;
+                        }
+
+                        if (this._hidePastEvents && dueDate < now) {
+                            return;
+                        }
+
+                        // Create event-like object from todo item
+                        // Add strikethrough for completed items
+                        const isCompleted = item.status === 'completed';
+                        const summary = isCompleted ? `<s>${item.summary}</s>` : item.summary;
+
+                        // Check if due date has a time component
+                        const hasTime = item.due.includes('T');
+
+                        const event = {
+                            summary: summary,
+                            description: item.description ?? null,
+                            start: hasTime ? { dateTime: item.due } : { date: item.due },
+                            end: hasTime ? { dateTime: item.due } : { date: item.due },
+                            // Todo-specific metadata
+                            isTodoItem: true,
+                            todoUid: item.uid,
+                            todoStatus: item.status
+                        };
+
+                        if (this._isFilterEvent(event, calendar.filter ?? '')) {
+                            return;
+                        }
+
+                        // Determine if full day based on whether time is specified
+                        const fullDay = !hasTime || (dueDate.hour === 0 && dueDate.minute === 0);
+                        this._addEvent(event, dueDate, dueDate, fullDay, calendar, false);
+                    });
+
                     this._loading--;
-                    return;
-                }
-
-                this._calendarErrors[currentCalendarNumber] = '';
-
-                response.forEach(event => {
-                    if (this._isFilterEvent(event, calendar.filter ?? '')) {
-                        return;
-                    }
-
-                    let startDate = this._convertApiDate(event.start);
-                    let endDate = this._convertApiDate(event.end);
-                    if (this._hidePastEvents && endDate < now) {
-                        return;
-                    }
-                    let fullDay = this._isFullDay(startDate, endDate);
-
-                    if (!fullDay && !this._isSameDay(startDate, endDate)) {
-                        this._handleMultiDayEvent(event, startDate, endDate, calendar);
-                    } else {
-                        this._addEvent(event, startDate, endDate, fullDay, calendar);
-                    }
+                }).catch(error => {
+                    this._calendarErrors[currentCalendarNumber] = 'Error while fetching todo list "' + calendar.entity + '": ' + (error.error ?? 'Unknown error');
+                    this._loading--;
                 });
+            } else {
+                // Fetch calendar events using REST API (existing logic)
+                this.hass.callApi(
+                    'get',
+                    'calendars/' + calendar.entity + '?start=' + encodeURIComponent(startDate.toISO()) + '&end=' + encodeURIComponent(endDate.toISO())
+                ).then(response => {
+                    if (this._startDate.toISO() !== runStartdate) {
+                        this._loading--;
+                        return;
+                    }
 
-                this._loading--;
-            }).catch(error => {
-                this._calendarErrors[currentCalendarNumber] = 'Error while fetching calendar "' + calendar.entity + '": ' + (error.error ?? 'Unknown error');
-                this._loading--;
-            });
+                    this._calendarErrors[currentCalendarNumber] = '';
+
+                    response.forEach(event => {
+                        if (this._isFilterEvent(event, calendar.filter ?? '')) {
+                            return;
+                        }
+
+                        let startDate = this._convertApiDate(event.start);
+                        let endDate = this._convertApiDate(event.end);
+                        if (this._hidePastEvents && endDate < now) {
+                            return;
+                        }
+                        let fullDay = this._isFullDay(startDate, endDate);
+
+                        if (!fullDay && !this._isSameDay(startDate, endDate)) {
+                            this._handleMultiDayEvent(event, startDate, endDate, calendar);
+                        } else {
+                            this._addEvent(event, startDate, endDate, fullDay, calendar);
+                        }
+                    });
+
+                    this._loading--;
+                }).catch(error => {
+                    this._calendarErrors[currentCalendarNumber] = 'Error while fetching calendar "' + calendar.entity + '": ' + (error.error ?? 'Unknown error');
+                    this._loading--;
+                });
+            }
             calendarNumber++;
         });
 
@@ -948,7 +1036,11 @@ export class WeekPlannerCard extends LitElement {
                 calendars: [calendar.entity],
                 calendarSorting: calendar.sorting,
                 calendarNames: [calendar.name],
-                class: this._getEventClass(startDate, endDate, fullDay, multiDay)
+                class: this._getEventClass(startDate, endDate, fullDay, multiDay),
+                // Preserve todo metadata if present
+                isTodoItem: event.isTodoItem ?? false,
+                todoUid: event.todoUid ?? null,
+                todoStatus: event.todoStatus ?? null
             }
             this._events[dateKey].push(eventKey);
         }
@@ -1184,7 +1276,35 @@ export class WeekPlannerCard extends LitElement {
         if (this._actions) {
             return;
         }
+
+        // Don't show any dialog for todo items (checkbox is the only interaction)
+        if (event.isTodoItem) {
+            return;
+        }
+
+        // Show the event details dialog for calendar events
         this._currentEventDetails = event;
+    }
+
+    _handleTodoCheckboxClick(event, isChecked) {
+        if (!event.isTodoItem || !event.todoUid || !event.calendars || !event.calendars[0]) {
+            return;
+        }
+
+        // Call the todo.update_item service to toggle completion status
+        const newStatus = isChecked ? 'completed' : 'needs_action';
+
+        this.hass.callService('todo', 'update_item', {
+            item: event.todoUid,
+            status: newStatus
+        }, {
+            entity_id: event.calendars[0]
+        }).then(() => {
+            // Refresh the events to show the updated status
+            this._updateEvents();
+        }).catch(error => {
+            console.error('Failed to update todo item:', error);
+        });
     }
 
     _closeDialog() {

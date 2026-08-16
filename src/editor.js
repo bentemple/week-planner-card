@@ -42,7 +42,7 @@ export class WeekPlannerCardEditor extends LitElement {
                                 ${this.addExpansionPanel(
                                     `Calendar: ${calendar.name ?? calendar.entity}`,
                                     html`
-                                        ${this.addEntityPickerField('calendars.' + index + '.entity', 'Entity', ['calendar'])}
+                                        ${this.addEntityPickerField('calendars.' + index + '.entity', 'Entity', ['calendar', 'todo'])}
                                         ${this.addTextField('calendars.' + index + '.name', 'Name')}
                                         ${this.addTextField('calendars.' + index + '.color', 'Color')}
                                         ${this.addIconPickerField('calendars.' + index + '.icon', 'Icon')}
