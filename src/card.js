@@ -658,6 +658,7 @@ export class WeekPlannerCard extends LitElement {
                 open
                 @closed="${this._closeDialog}"
                 .heading="${this._renderEventDetailsDialogHeading()}"
+                header-title="${this._currentEventDetails.summary ?? ''}"
             >
                 <div class="content">
                     <div class="calendar">
